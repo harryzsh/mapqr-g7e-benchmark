@@ -80,13 +80,62 @@ Full nuScenes v1.0-trainval dataset:
 | 3 | 181.43 | 1.106s |
 | 4 | 158.73 | 1.103s |
 
+### 8-GPU BF16 Mixed Precision (batch=8/GPU)
+
+| Metric | Value |
+|--------|-------|
+| Total batch size | 64 (8 × 8 GPUs) |
+| Epochs | 24 |
+| Total training time | ~9 min |
+| Time per epoch | ~23 sec |
+| GPU memory | 31.7 GB / 96 GB (33%) |
+| GPU utilization | 97-99% |
+| Temperature | 30-37°C |
+| Power draw | **260-296W / 600W (44-49%)** |
+
+### Single GPU Loss Convergence
+
+| Epoch | Loss |
+|-------|------|
+| 1 | 392.10 |
+| 2 | 209.45 |
+| 3 | 181.43 |
+| 4 | 158.73 |
+| 5 | 144.06 |
+
+### Profiling: Top CUDA Kernels (Backbone + Neck, single GPU)
+
+| Operation | GPU Time | % | Type |
+|-----------|----------|---|------|
+| cudnn_convolution | 440ms | 44.9% | Tensor Core (CUTLASS GEMM) |
+| cudnn_batch_norm | 208ms | 21.2% | Element-wise |
+| ReLU (clamp_min_) | 159ms | 16.3% | Element-wise |
+| Residual add_ | 159ms | 16.2% | Element-wise |
+| max_pool2d | 14ms | 1.4% | Memory-bound |
+
+- Backbone+Neck throughput: **49.5 ms/iter, 2,424 images/sec**
+- Convolutions use `cutlass_80_tensorop` (Ampere-era kernels via JIT, not native Blackwell sm_120)
+- Over 53% of GPU time is memory-bound element-wise ops
+
+### Configuration Comparison
+
+| Config | Batch | 24 Epochs | Mem/GPU | Power/GPU | Notes |
+|--------|-------|-----------|---------|-----------|-------|
+| FP32 1-GPU bs=4 | 4 | ~36 min | 17.5GB (18%) | ~200W (33%) | Baseline single GPU |
+| FP32 8-GPU bs=4 | 32 | ~8 min | 17.5GB (18%) | ~200W (33%) | 4.5x speedup from 8 GPUs |
+| FP32 8-GPU bs=8 | 64 | ~9 min | 31.7GB (33%) | ~170W (28%) | Larger batch, similar speed |
+| BF16 8-GPU bs=8 | 64 | ~9 min | 31.7GB (33%) | ~280W (47%) | Tensor Cores engaged, no speed gain |
+
 ### Key Findings
 
 1. **GPU underutilization**: MapQR (ResNet50, dim=128) is too small for RTX PRO 6000's 96GB. Only 18-33% memory used.
-2. **Power efficiency**: GPUs running at 25-33% TDP. The model doesn't saturate Tensor Cores.
+2. **Power efficiency**: FP32 runs at 25-33% TDP. BF16 increases to 44-49% TDP (Tensor Cores engaged) but no speed improvement — model too small to benefit.
 3. **DDP efficiency**: 8-GPU gives ~4.5x speedup over 1-GPU (vs theoretical 8x). Similar to H200 benchmark findings.
 4. **Batch scaling limited**: Deformable attention CUDA op constrains batch sizes (`batch % im2col_step == 0`). Max practical batch=8/GPU.
-5. **Blackwell compatibility**: Required 13 patches to port MapQR from CUDA 11.x/PyTorch 1.9 to CUDA 12.8/PyTorch 2.7.
+5. **Kernel bottleneck**: 53% of GPU time is memory-bound element-wise ops (batch norm, ReLU, residual add). Only 45% is compute (convolutions).
+6. **Not using native Blackwell kernels**: PyTorch 2.7 uses Ampere-era CUTLASS kernels (sm_80) via JIT, not native Blackwell (sm_120). Future PyTorch versions may improve this.
+7. **Blackwell compatibility**: Required 13 patches to port MapQR from CUDA 11.x/PyTorch 1.9 to CUDA 12.8/PyTorch 2.7.
+8. **NCCL 2.28+ required**: NCCL ≤2.26 has a known bug causing multi-GPU hangs on Blackwell (GitHub issue #1637). Fixed by mounting host NCCL 2.28.9 via LD_PRELOAD.
 
 ## Setup Guide
 
