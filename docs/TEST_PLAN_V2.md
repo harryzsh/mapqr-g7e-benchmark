@@ -13,16 +13,13 @@ No data loading — measures raw model compute speed with phased timing.
 
 **Script:** `scripts/benchmark_synthetic.py`
 
-**Tests:**
-| Test | Batch/GPU | GPUs | Precision | What it measures |
-|------|-----------|------|-----------|-----------------|
-| A1 | 4 | 1 | FP32 | Single GPU baseline |
-| A2 | 8 | 1 | FP32 | Batch scaling on 1 GPU |
-| A3 | 4 | 8 | FP32 | DDP overhead |
-| A4 | 8 | 8 | FP32 | DDP + larger batch |
-| A5 | 8 | 8 | BF16 | Mixed precision impact |
-| A6 | 4 | 2 | FP32 | DDP scaling (2 GPU) |
-| A7 | 4 | 4 | FP32 | DDP scaling (4 GPU) |
+**Tests (all 8-GPU):**
+| Test | Batch/GPU | Global Batch | Precision | What it measures |
+|------|-----------|-------------|-----------|-----------------|
+| A1 | 4 | 32 | FP32 | 8-GPU baseline (default batch) |
+| A2 | 8 | 64 | FP32 | 8-GPU larger batch |
+| A3 | 4 | 32 | BF16 | 8-GPU BF16 default batch |
+| A4 | 8 | 64 | BF16 | 8-GPU BF16 larger batch |
 
 **Metrics per test (50 steps, 5 warmup):**
 - Forward time (ms)
